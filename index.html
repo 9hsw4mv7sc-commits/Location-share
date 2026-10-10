@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Поделиться местоположением</title>
+  <style>
+    body{font:16px/1.5 system-ui,-apple-system,sans-serif;max-width:620px;margin:40px auto;padding:0 18px;color:#17202a}
+    main{border:1px solid #d9dee5;border-radius:16px;padding:24px}
+    button{font:inherit;padding:12px 16px;border:0;border-radius:10px;background:#1457d9;color:white;cursor:pointer}
+    button:disabled{opacity:.6;cursor:wait}
+    #status{white-space:pre-wrap;margin-top:18px}
+    .muted{color:#52606d;font-size:.94rem}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Поделиться местоположением</h1>
+  <p>Если вы хотите поделиться своим текущим местоположением, нажмите кнопку ниже. Браузер запросит разрешение на геолокацию. После получения координат вы сможете отдельно подтвердить их отправку.</p>
+  <button id="locate">Определить моё местоположение</button>
+  <section id="details" hidden>
+    <p id="coords"></p>
+    <p class="muted">Координаты будут отправлены владельцу этой страницы только после нажатия кнопки отправки.</p>
+    <button id="send">Отправить координаты</button>
+  </section>
+  <p id="status" role="status" aria-live="polite"></p>
+</main>
+<script>
+(() => {
+  const locate = document.querySelector('#locate');
+  const send = document.querySelector('#send');
+  const details = document.querySelector('#details');
+  const coords = document.querySelector('#coords');
+  const status = document.querySelector('#status');
+  let locationData = null;
+
+  locate.addEventListener('click', () => {
+    if (!navigator.geolocation) {
+      status.textContent = 'Этот браузер не поддерживает геолокацию.';
+      return;
+    }
+    locate.disabled = true;
+    status.textContent = 'Запрашиваем разрешение и определяем местоположение…';
+    navigator.geolocation.getCurrentPosition(
+      p => {
+        locationData = {
+          latitude: p.coords.latitude,
+          longitude: p.coords.longitude,
+          accuracy_m: Math.round(p.coords.accuracy),
+          timestamp: new Date(p.timestamp).toISOString()
+        };
+        coords.textContent =
+          `Широта: ${locationData.latitude}\nДолгота: ${locationData.longitude}\nПогрешность: примерно ${locationData.accuracy_m} м`;
+        details.hidden = false;
+        status.textContent = 'Координаты получены. Решите, хотите ли вы отправить их.';
+        locate.disabled = false;
+      },
+      e => {
+        const messages = {
+          1: 'Доступ к геолокации не разрешён.',
+          2: 'Устройство не смогло определить местоположение.',
+          3: 'Истекло время ожидания геолокации.'
+        };
+        status.textContent = messages[e.code] || 'Не удалось получить местоположение.';
+        locate.disabled = false;
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+    );
+  });
+
+  send.addEventListener('click', async () => {
+    if (!locationData) return;
+    if (!confirm('Отправить эти координаты владельцу страницы?')) return;
+    send.disabled = true;
+    status.textContent = 'Отправляем…';
+    try {
+      const r = await fetch('/api/location', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(locationData)
+      });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      status.textContent = 'Координаты отправлены.';
+    } catch (_) {
+      status.textContent = 'Не удалось отправить координаты. Возможно, сервер ещё не настроен.';
+    } finally {
+      send.disabled = false;
+    }
+  });
+})();
+</script>
+</body>
+</html>
